@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkclash_royale_deck_builder=self.webpackChunkclash_royale_deck_builder||[]).push([[650],{650:e=>{e.exports={token:null}}}]);

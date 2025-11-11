@@ -23,6 +23,9 @@ const ClashRoyaleDeckBuilder = () => {
     generating: false,
     result: null
   });
+  const [userTrophies, setUserTrophies] = useState(null);
+  const [selectedArena, setSelectedArena] = useState('all');
+  const [showArenaFilter, setShowArenaFilter] = useState(false);
 
   const TEMPLATES = [
     {
@@ -49,6 +52,25 @@ const ClashRoyaleDeckBuilder = () => {
       archetype: 'Siege',
       cards: ['X-Bow','Tesla','Knight','Archers','Ice Spirit','Rocket','Log','Skeletons']
     }
+  ];
+
+  const ARENAS = [
+    { name: "Training Camp", trophyRequirement: 0, unlocks: ["Minions","Knight","Arrows","Archers","Fireball","Mini P.E.K.K.A.","Musketeer","Giant"] },
+    { name: "Goblin Stadium", trophyRequirement: 0, unlocks: ["Goblins","Spear Goblins","Goblin Cage","Goblin Hut"] },
+    { name: "Bone Pit", trophyRequirement: 300, unlocks: ["Valkyrie","Bomber","Tombstone","Skeletons"] },
+    { name: "Barbarian Bowl", trophyRequirement: 600, unlocks: ["Barbarians","Cannon","Rocket","Giant Skeleton"] },
+    { name: "P.E.K.K.A's Playhouse", trophyRequirement: 1000, unlocks: ["P.E.K.K.A","Baby Dragon","Prince","Skeleton Army","Witch","Dark Prince","Guards"] },
+    { name: "Spell Valley", trophyRequirement: 1300, unlocks: ["Balloon","Lightning","Poison","Freeze","Tornado"] },
+    { name: "Builder's Workshop", trophyRequirement: 1600, unlocks: ["X-Bow","Inferno Tower","Hog Rider","Mortar","Elixir Collector","Mega Minion","Furnace","Battle Ram"] },
+    { name: "Royal Arena", trophyRequirement: 2000, unlocks: ["Royal Giant","Elite Barbarians","Three Musketeers","Dark Prince","Guards","Barbarian Barrel"] },
+    { name: "Frozen Peak", trophyRequirement: 2300, unlocks: ["Ice Wizard","Ice Spirit","Bowler","Lumberjack","Miner","Graveyard"] },
+    { name: "Jungle Arena", trophyRequirement: 2600, unlocks: ["Lava Hound","Goblin Gang","Dart Goblin","Executioner","Bandit","Electro Wizard"] },
+    { name: "Hog Mountain", trophyRequirement: 3000, unlocks: ["Sparky","Inferno Dragon","Log","Princess","Night Witch","Ram Rider"] },
+    { name: "Electro Valley", trophyRequirement: 3400, unlocks: ["Electro Giant","Electro Dragon","Electro Spirit","Zappies","Hunter","Magic Archer"] },
+    { name: "Spooky Town", trophyRequirement: 3800, unlocks: ["Skeleton Barrel","Flying Machine","Wall Breakers","Royal Hogs","Goblin Giant","Fisherman"] },
+    { name: "Rascal's Hideout", trophyRequirement: 4200, unlocks: ["Rascals","Cannon Cart","Royal Recruits","Zap","Mega Knight"] },
+    { name: "Serenity Peak", trophyRequirement: 4600, unlocks: ["Heal Spirit","Firecracker","Goblin Drill","Electro Spirit","Mother Witch"] },
+    { name: "All Cards", trophyRequirement: 5000, unlocks: [] }
   ];
 
   const ARCHETYPE_OPTIONS = [
@@ -83,29 +105,17 @@ const ClashRoyaleDeckBuilder = () => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const json = await response.json();
         const data = json || [];
+        console.log(data)
 
         const playableCards = data.filter(card =>
-          card.elixirCost !== undefined &&
+          card.elixir !== undefined &&
           card.rarity &&
           card.name
         ).map(card => ({
           ...card,
-          elixir: card.elixirCost,
-          key: card.id,
+          key: card.id + card.isEvo.toString(),
           type: card.rarity === 'common' || card.rarity === 'rare' || card.rarity === 'epic' ? 'Troop' : 'Troop',
         }));
-
-        // playableCards.forEach(card => {
-        //   if (card.maxEvolutionLevel) {
-        //     playableCards.push({
-        //       ...card,
-        //       name: `Evo ${card.name}`,
-        //       elixir: card.elixirCost,
-        //       key: `${card.id}-evolution`,
-        //       type: card.rarity === 'common' || card.rarity === 'rare' || card.rarity === 'epic' ? 'Troop' : 'Troop',
-        //     });
-        //   }
-        // });
 
         playableCards.sort((a, b) => b.elixir - a.elixir || a.name.localeCompare(b.name));
         setCards(playableCards);
@@ -268,8 +278,29 @@ Constraints:
 - Remember that a deck may only have TWO evolution cards; do not suggest adding more than that.
 `;
 
+    let token = null;
+
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=AIzaSyBq2l0TqZn0YB88t50poqqFzCMMHchIEoY`, {
+      const file = await import('./token.json', { assert: { type: 'json' } });
+      token = file.default?.token;
+    } catch (err) {
+      console.warn("No token.json found, will prompt for token...");
+    }
+
+    if (!token || token === null || token === '') {
+      token = window.prompt("Please enter your Gemini API token:");
+      if (!token) {
+        alert('API token is required to analyze the deck');
+        setAnalyzing(false);
+        return;
+      }
+    }
+
+    console.log("Using token:", token);
+
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${token}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -514,7 +545,13 @@ Constraints:
       ? `Additional requirements: ${deckCreation.additionalRequest}`
       : '';
 
-    const availableCards = cards.map(c => `${c.name} (${c.elixir} elixir, ${c.type}, ${c.rarity})`).join(', ');
+    const availableCards = filteredCards.map(c => `${c.name} (${c.elixir} elixir, ${c.type}, ${c.rarity})`).join(', ');
+
+    // Filter cards based on arena if applicable
+    const allowedCardNames = selectedArena !== 'all' ? getUnlockedCards() : cards.map(c => c.name);
+    const arenaRestriction = selectedArena !== 'all' 
+      ? `IMPORTANT: User is in ${selectedArena} arena (${getCurrentTrophyRequirement()} trophies). You can ONLY use these unlocked cards: ${allowedCardNames.join(', ')}. Do not suggest any cards outside this list.`
+      : '';
 
     const prompt = `Create a competitive Clash Royale deck following these specifications. Return ONLY valid JSON (no markdown, no preamble):
 
@@ -523,6 +560,7 @@ ${archetypesText}
 ${characteristicsText}
 ${additionalText}
 ${deckCreation.allowEvos ? '' : 'DO NOT include any evolution cards in the deck.'}
+${arenaRestriction}
 
 Available cards: ${availableCards}
 
@@ -560,8 +598,28 @@ CRITICAL:
 - Evolution cards can be included by prefixing the name with "Evo ", e.g. "Evo Knight"
 - Evo cards should be the first to be included if required cards contain evolutions`;
 
+    let token = null;
+
     try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=AIzaSyBq2l0TqZn0YB88t50poqqFzCMMHchIEoY`, {
+      const file = await import('./token.json', { assert: { type: 'json' } });
+      token = file.default?.token;
+    } catch (err) {
+      console.warn("No token.json found, will prompt for token...");
+    }
+
+    if (!token || token === null || token === '') {
+      token = window.prompt("Please enter your Gemini API token:");
+      if (!token) {
+        alert('API token is required to analyze the deck');
+        setAnalyzing(false);
+        return;
+      }
+    }
+
+    console.log("Using token:", token);
+
+    try {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${token}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -627,11 +685,54 @@ CRITICAL:
     }
   };
 
+  const getUnlockedCards = () => {
+    if (selectedArena === 'all') {
+      return cards.map(c => c.name);
+    }
+
+    const currentArenaIndex = ARENAS.findIndex(a => a.name === selectedArena);
+    if (currentArenaIndex === -1) return cards.map(c => c.name);
+
+    const unlockedCards = new Set();
+    for (let i = 0; i <= currentArenaIndex; i++) {
+      ARENAS[i].unlocks.forEach(cardName => unlockedCards.add(cardName));
+    }
+
+    return Array.from(unlockedCards);
+  };
+
+  const getCurrentTrophyRequirement = () => {
+    if (selectedArena === 'all') return 5000;
+    const arena = ARENAS.find(a => a.name === selectedArena);
+    return arena ? arena.trophyRequirement : 0;
+  };
+
+  const handleTrophyInput = (trophies) => {
+    const trophy = parseInt(trophies) || 0;
+    setUserTrophies(trophy);
+    
+    // Find appropriate arena based on trophies
+    for (let i = ARENAS.length - 1; i >= 0; i--) {
+      if (trophy >= ARENAS[i].trophyRequirement) {
+        setSelectedArena(ARENAS[i].name);
+        break;
+      }
+    }
+  };
+
   const filteredCards = cards.filter(card => {
     const matchesType = filterType === 'all' || card.type.toLowerCase() === filterType;
     const matchesRarity = filterRarity === 'all' || card.rarity.toLowerCase() === filterRarity;
     const matchesSearch = card.name.toLowerCase().includes(searchTerm.toLowerCase());
-    return matchesType && matchesRarity && matchesSearch;
+    
+    // Arena filtering
+    let matchesArena = true;
+    if (selectedArena !== 'all') {
+      const unlockedCards = getUnlockedCards();
+      matchesArena = unlockedCards.includes(card.name);
+    }
+    
+    return matchesType && matchesRarity && matchesSearch && matchesArena;
   });
 
   const avgElixir = selectedCards.length > 0 
@@ -678,6 +779,14 @@ CRITICAL:
             </h1>
             <div className="flex items-center gap-2">
               <button
+                onClick={() => setShowArenaFilter(!showArenaFilter)}
+                className={`px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
+                  showArenaFilter ? 'bg-purple-600' : 'bg-purple-700 bg-opacity-40 hover:bg-opacity-60'
+                }`}
+              >
+                🏆 Arena Filter
+              </button>
+              <button
                 onClick={() => setShowDebug(!showDebug)}
                 className="bg-blue-700 bg-opacity-40 px-3 py-1 rounded-lg text-sm hover:bg-opacity-60"
               >
@@ -689,6 +798,60 @@ CRITICAL:
               <span className="text-xl font-bold">Avg: {avgElixir}</span>
             </div>
           </div>
+
+          {showArenaFilter && (
+            <div className="bg-black bg-opacity-40 rounded-xl p-4 mb-4">
+              <h3 className="font-bold text-lg mb-3">Card Availability Filter</h3>
+              <p className="text-sm text-gray-300 mb-4">Only show cards you have access to based on your arena/trophies</p>
+              
+              <div className="grid md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-gray-300 mb-2 block">Enter Your Trophies</label>
+                  <input
+                    type="number"
+                    placeholder="e.g., 3500"
+                    value={userTrophies || ''}
+                    onChange={(e) => handleTrophyInput(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg bg-blue-900 border border-blue-600 focus:outline-none focus:border-blue-400 text-white"
+                  />
+                </div>
+                
+                <div>
+                  <label className="text-sm text-gray-300 mb-2 block">Or Select Arena</label>
+                  <select
+                    value={selectedArena}
+                    onChange={(e) => {
+                      setSelectedArena(e.target.value);
+                      const arena = ARENAS.find(a => a.name === e.target.value);
+                      setUserTrophies(arena ? arena.trophyRequirement : null);
+                    }}
+                    className="w-full px-4 py-2 rounded-lg bg-blue-900 border border-blue-600 focus:outline-none focus:border-blue-400"
+                  >
+                    <option value="all">All Cards (No Filter)</option>
+                    {ARENAS.map(arena => (
+                      <option key={arena.name} value={arena.name}>
+                        {arena.name} ({arena.trophyRequirement}+ 🏆)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {selectedArena !== 'all' && (
+                <div className="mt-4 bg-blue-900 bg-opacity-50 rounded-lg p-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-bold text-yellow-400">Current Arena: {selectedArena}</span>
+                      <span className="text-sm text-gray-300 ml-3">{getCurrentTrophyRequirement()}+ trophies</span>
+                    </div>
+                    <div className="text-sm text-gray-300">
+                      {getUnlockedCards().length} cards unlocked
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="bg-black bg-opacity-30 rounded-xl p-4">
             <div className="flex justify-between items-center mb-3">
@@ -726,7 +889,7 @@ CRITICAL:
                   className="relative cursor-pointer transform hover:scale-110 transition-transform group"
                 >
                   <img
-                    src={card.imageUrl}
+                    src={card.image}
                     alt={card.name}
                     className="w-full rounded-lg border-3 border-yellow-400 shadow-lg"
                   />
@@ -881,10 +1044,11 @@ CRITICAL:
 
               <div className="text-sm text-gray-300 mb-4">
                 Showing {filteredCards.length} cards
+                {selectedArena !== 'all' && ` (filtered by ${selectedArena})`}
               </div>
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3">
                 {filteredCards.map(card => {
-                  const isSelected = selectedCards.find(c => c.id === card.id);
+                  const isSelected = selectedCards.find(c => c.id === card.id) && selectedCards.filter(c => c.isEvo).length < 3;
                   return (
                     <div
                       key={card.key}
@@ -894,7 +1058,7 @@ CRITICAL:
                       }`}
                     >
                       <img
-                        src={card.imageUrl}
+                        src={card.image}
                         alt={card.name}
                         className="w-full rounded-lg border-2 border-blue-600"
                       />
@@ -1014,7 +1178,7 @@ CRITICAL:
                       {selectedCards.map(card => (
                         <div key={`${card.id}-${card.name}`} className="flex items-center gap-3 bg-blue-900 bg-opacity-50 p-3 rounded-lg">
                           <img
-                            src={card.imageUrl}
+                            src={card.image}
                             alt={card.name}
                             className="w-16 h-16 rounded"
                           />
@@ -1057,7 +1221,7 @@ CRITICAL:
                       className="relative cursor-pointer transform hover:scale-105 transition-all"
                     >
                       <img
-                        src={card.imageUrl}
+                        src={card.image}
                         alt={card.name}
                         className="w-full rounded-lg border-3 border-green-400 shadow-lg"
                       />
@@ -1088,17 +1252,26 @@ CRITICAL:
                 </div>
 
                 <div className="grid grid-cols-6 sm:grid-cols-8 md:grid-cols-10 gap-2 max-h-64 overflow-y-auto">
-                  {cards.filter(c => 
-                    c.name.toLowerCase().includes(searchTerm.toLowerCase()) &&
-                    !deckCreation.requiredCards.find(rc => rc.key === c.key)
-                  ).slice(0, 40).map(card => (
+                  {cards.filter(c => {
+                      const matchesSearch = c.name.toLowerCase().includes(searchTerm.toLowerCase());
+                      const notInDeck = !deckCreation.requiredCards.find(rc => rc.key === c.key);
+
+                      let matchesArena = true;
+                      if (selectedArena !== 'all') {
+                        const unlockedCards = getUnlockedCards();
+                        matchesArena = unlockedCards.includes(c.name);
+                      }
+
+                      return matchesSearch && notInDeck && matchesArena;
+                    })
+                    .slice(0, 40).map(card => (
                     <div
                       key={card.key}
                       onClick={() => toggleRequiredCard(card)}
                       className="relative cursor-pointer transform hover:scale-105 transition-all opacity-60 hover:opacity-100"
                     >
                       <img
-                        src={card.imageUrl}
+                        src={card.image}
                         alt={card.name}
                         className="w-full rounded-lg border border-blue-600"
                       />
@@ -1223,7 +1396,7 @@ CRITICAL:
                       {deckCreation.result.cards.map(card => (
                         <div key={card.key} className="relative">
                           <img
-                            src={card.imageUrl}
+                            src={card.image}
                             alt={card.name}
                             className="w-full rounded-lg border-2 border-yellow-400 shadow-lg"
                           />

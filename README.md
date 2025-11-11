@@ -2,7 +2,7 @@
 
 Uses the Gemini API to create decks or suggest changes to already existing ones. 
 
-Uses [*my* API](https://github.com/hydrophobis/ClashCards) for card data which is a static clone of the actual CR cards endpoint.
+Uses [*my* API](https://github.com/hydrophobis/ClashCards) for card data which is a static clone of the actual CR cards endpoint plus a little more.
 
 Comes with a few template decks ready to test with and a very intuitive card selector for the deck.
 
